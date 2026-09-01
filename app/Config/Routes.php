@@ -6,9 +6,9 @@ use CodeIgniter\Router\RouteCollection;
 $routes->setAutoRoute(false);
 
 $routes->get('/', 'Home::index', ['filter' => 'auth']);
-$routes->match(['get', 'post'], 'login', 'AuthController::login', ['filter' => 'guest']);
+$routes->match(['GET', 'POST'], 'login', 'AuthController::login', ['filter' => 'guest']);
 $routes->post('logout', 'AuthController::logout', ['filter' => 'auth']);
-$routes->match(['get', 'post'], 'akun/password', 'AccountController::password', ['filter' => 'auth']);
+$routes->match(['GET', 'POST'], 'akun/password', 'AccountController::password', ['filter' => 'auth']);
 
 $routes->group('dokumen', ['filter' => 'auth'], static function (RouteCollection $routes): void {
     $routes->get('/', 'DocumentController::index');

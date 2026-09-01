@@ -1,7 +1,7 @@
 <?= $this->extend('layouts/app') ?>
 <?= $this->section('content') ?>
 <?php if (! $remoteConfigured): ?>
-    <div class="connection-banner"><div><strong>Koneksi hosting belum dikonfigurasi</strong><span>Isi <code>remoteStorage.baseUrl</code> dan <code>remoteStorage.apiKey</code> pada file .env.</span></div><span class="status-dot offline">Offline</span></div>
+    <div class="connection-banner"><div><strong>Koneksi hosting belum dikonfigurasi</strong><span>Isi <code>remoteStorage.baseUrl</code>, <code>remoteStorage.clientId</code>, dan <code>remoteStorage.secret</code> pada file .env.</span></div><span class="status-dot offline">Offline</span></div>
 <?php else: ?>
     <div class="connection-banner connected"><div><strong>Konfigurasi hosting tersedia</strong><span>Aplikasi siap meminta daftar dokumen dari API recruitment.</span></div><span class="status-dot online">Siap</span></div>
 <?php endif ?>

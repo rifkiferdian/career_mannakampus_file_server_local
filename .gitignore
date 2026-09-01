@@ -42,6 +42,8 @@ $RECYCLE.BIN/
 # These should never be under version control,
 # as it poses a security risk.
 .env
+.env.*
+!.env.example
 .vagrant
 Vagrantfile
 
@@ -59,6 +61,15 @@ Vagrantfile
 
 /writable/uploads/*
 !/writable/uploads/index.html
+
+# Applicant documents downloaded from the recruitment hosting.
+# These files contain personal data and must never be committed.
+/writable/documents/*
+!/writable/documents/index.html
+
+# Incomplete/temporary files created during document synchronization.
+/writable/**/*.part
+/writable/**/*.tmp
 
 /writable/debugbar/*
 !/writable/debugbar/index.html

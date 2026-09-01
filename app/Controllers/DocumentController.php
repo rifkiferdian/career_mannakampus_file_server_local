@@ -40,12 +40,24 @@ class DocumentController extends BaseController
 
     public function sync()
     {
+        $auth = (array) session('auth_user');
         try {
-            $count = (new RemoteDocumentService())->syncMetadata();
-            (new AuditService())->record('metadata_synced', 'Sinkronisasi metadata: ' . $count . ' dokumen diterima.');
-            return redirect()->back()->with('success', $count . ' dokumen dari hosting berhasil diperbarui.');
+            $result = (new RemoteDocumentService())->syncAll((int) $auth['id']);
+            $summary = sprintf(
+                'Metadata: %d, PDF tersimpan: %d, konfirmasi hosting: %d, gagal: %d.',
+                $result['metadata'],
+                $result['downloaded'],
+                $result['confirmed'],
+                $result['failed'],
+            );
+            (new AuditService())->record('documents_synced', $summary);
+            if ($result['failed'] > 0) {
+                return redirect()->back()->with('warning', 'Sinkronisasi selesai dengan sebagian kegagalan. ' . $summary);
+            }
+
+            return redirect()->back()->with('success', 'Sinkronisasi selesai. ' . $summary);
         } catch (Throwable $exception) {
-            (new AuditService())->record('metadata_sync_failed', mb_substr($exception->getMessage(), 0, 500));
+            (new AuditService())->record('documents_sync_failed', mb_substr($exception->getMessage(), 0, 500));
             return redirect()->back()->with('error', 'Sinkronisasi gagal: ' . $exception->getMessage());
         }
     }

@@ -2,9 +2,11 @@
 
 namespace App\Services;
 
+use App\Libraries\StorageSyncSignature;
 use App\Models\DocumentModel;
 use App\Models\TransferLogModel;
 use CodeIgniter\HTTP\CURLRequest;
+use CodeIgniter\HTTP\ResponseInterface;
 use Config\RemoteStorage;
 use RuntimeException;
 use Throwable;
@@ -21,20 +23,57 @@ class RemoteDocumentService
             'timeout' => $this->config->timeout,
             'connect_timeout' => 10,
             'http_errors' => false,
-        ]);
+        ], null, null, false);
+    }
+
+    /** @return array{metadata: int, downloaded: int, confirmed: int, failed: int} */
+    public function syncAll(int $userId): array
+    {
+        $result = ['metadata' => $this->syncMetadata(), 'downloaded' => 0, 'confirmed' => 0, 'failed' => 0];
+
+        $unconfirmed = (new DocumentModel())
+            ->where('transfer_status', 'completed')
+            ->whereIn('confirmation_status', ['pending', 'failed'])
+            ->orderBy('id', 'ASC')
+            ->findAll($this->config->syncBatchLimit);
+        foreach ($unconfirmed as $document) {
+            if ($this->confirmStored((int) $document['id'], $userId)) {
+                $result['confirmed']++;
+            } else {
+                $result['failed']++;
+            }
+        }
+
+        $downloadable = (new DocumentModel())
+            ->whereIn('transfer_status', ['pending', 'failed'])
+            ->orderBy('id', 'ASC')
+            ->findAll($this->config->syncBatchLimit);
+        foreach ($downloadable as $document) {
+            try {
+                $download = $this->download((int) $document['id'], $userId);
+                $result['downloaded']++;
+                if ($download['confirmed']) {
+                    $result['confirmed']++;
+                } else {
+                    $result['failed']++;
+                }
+            } catch (Throwable) {
+                $result['failed']++;
+            }
+        }
+
+        return $result;
     }
 
     public function syncMetadata(): int
     {
         $this->assertConfigured();
-        $response = $this->client->get($this->url($this->config->pendingPath), [
-            'headers' => $this->headers(),
-        ]);
+        $response = $this->request('GET', $this->config->pendingPath);
         if ($response->getStatusCode() !== 200) {
-            throw new RuntimeException('Hosting merespons HTTP ' . $response->getStatusCode() . ' saat mengambil daftar dokumen.');
+            throw new RuntimeException($this->remoteError($response, 'mengambil daftar dokumen'));
         }
 
-        $payload = json_decode($response->getBody(), true);
+        $payload = json_decode((string) $response->getBody(), true);
         $rows = is_array($payload) ? ($payload['documents'] ?? $payload['data'] ?? null) : null;
         if (! is_array($rows)) {
             throw new RuntimeException('Format daftar dokumen dari hosting tidak valid.');
@@ -52,7 +91,7 @@ class RemoteDocumentService
                 'remote_document_id' => $remoteId,
                 'applicant_id' => $this->nullableInt($row['applicant_id'] ?? null),
                 'batch_id' => $this->nullableInt($row['batch_id'] ?? null),
-                'application_number' => $this->limited($row['application_number'] ?? null, 50),
+                'application_number' => $this->limited($row['application_number'] ?? $row['batch_number'] ?? null, 50),
                 'applicant_name' => $this->limited($row['applicant_name'] ?? 'Pelamar', 150) ?: 'Pelamar',
                 'document_type' => $this->limited($row['document_type'] ?? 'application_bundle', 50) ?: 'application_bundle',
                 'original_filename' => $this->limited($row['original_filename'] ?? ('dokumen-' . $remoteId . '.pdf'), 255),
@@ -63,6 +102,7 @@ class RemoteDocumentService
             ];
             if ($existing === null) {
                 $data['transfer_status'] = 'pending';
+                $data['confirmation_status'] = 'pending';
                 $model->insert($data);
             } else {
                 if ($existing['transfer_status'] === 'completed') {
@@ -85,27 +125,34 @@ class RemoteDocumentService
         if ($document === null) {
             throw new RuntimeException('Dokumen tidak ditemukan.');
         }
+        if ($document['transfer_status'] === 'completed') {
+            return [
+                'confirmed' => $this->confirmStored($documentId, $userId),
+                'bytes' => (int) $document['file_size'],
+                'checksum' => (string) $document['sha256_checksum'],
+            ];
+        }
 
-        $startedAt = date('Y-m-d H:i:s');
         $logModel = new TransferLogModel();
         $logId = (int) $logModel->insert([
             'document_id' => $documentId,
             'user_id' => $userId,
             'action' => $document['transfer_status'] === 'failed' ? 'retry' : 'download',
             'status' => 'started',
-            'started_at' => $startedAt,
+            'started_at' => date('Y-m-d H:i:s'),
         ], true);
         $documents->update($documentId, ['transfer_status' => 'downloading', 'last_error' => null]);
+        $finalPath = null;
 
         try {
-            $path = str_replace('{id}', (string) (int) $document['remote_document_id'], $this->config->downloadPath);
-            $response = $this->client->get($this->url($path), ['headers' => $this->headers()]);
+            $remotePath = str_replace('{id}', (string) (int) $document['remote_document_id'], $this->config->downloadPath);
+            $response = $this->request('GET', $remotePath, '', 'application/pdf');
             $statusCode = $response->getStatusCode();
             if ($statusCode !== 200) {
-                throw new RuntimeException('Hosting merespons HTTP ' . $statusCode . ' saat mengunduh file.');
+                throw new RuntimeException($this->remoteError($response, 'mengunduh file'));
             }
 
-            $body = $response->getBody();
+            $body = (string) $response->getBody();
             $bytes = strlen($body);
             if ($bytes < 8 || $bytes > $this->config->maxFileSize) {
                 throw new RuntimeException('Ukuran file tidak valid atau melebihi batas penyimpanan lokal.');
@@ -117,8 +164,8 @@ class RemoteDocumentService
             $checksum = hash('sha256', $body);
             $expected = $this->checksum($document['sha256_checksum'] ?? null)
                 ?? $this->checksum($response->getHeaderLine('X-Checksum-SHA256'));
-            if ($expected !== null && ! hash_equals($expected, $checksum)) {
-                throw new RuntimeException('Checksum file tidak cocok. File tidak disimpan.');
+            if ($expected === null || ! hash_equals($expected, $checksum)) {
+                throw new RuntimeException('Checksum file tidak tersedia atau tidak cocok. File tidak disimpan.');
             }
 
             $relativeDirectory = date('Y/m');
@@ -142,24 +189,27 @@ class RemoteDocumentService
                 'file_size' => $bytes,
                 'sha256_checksum' => $checksum,
                 'transfer_status' => 'completed',
+                'confirmation_status' => 'pending',
+                'confirmation_error' => null,
                 'last_error' => null,
                 'downloaded_at' => date('Y-m-d H:i:s'),
                 'downloaded_by' => $userId,
             ]);
-
-            $confirmed = $this->confirm((int) $document['remote_document_id'], $checksum, $bytes);
             $logModel->update($logId, [
                 'status' => 'success',
                 'http_status' => $statusCode,
                 'bytes_received' => $bytes,
                 'checksum_valid' => 1,
-                'error_message' => $confirmed ? null : 'File tersimpan, tetapi hosting belum menerima konfirmasi.',
                 'finished_at' => date('Y-m-d H:i:s'),
             ]);
-
-            return ['confirmed' => $confirmed, 'bytes' => $bytes, 'checksum' => $checksum];
         } catch (Throwable $exception) {
-            $documents->update($documentId, ['transfer_status' => 'failed', 'last_error' => mb_substr($exception->getMessage(), 0, 2000)]);
+            if ($finalPath !== null && is_file($finalPath)) {
+                @unlink($finalPath);
+            }
+            $documents->update($documentId, [
+                'transfer_status' => 'failed',
+                'last_error' => mb_substr($exception->getMessage(), 0, 2000),
+            ]);
             $logModel->update($logId, [
                 'status' => 'failed',
                 'error_message' => mb_substr($exception->getMessage(), 0, 2000),
@@ -167,21 +217,115 @@ class RemoteDocumentService
             ]);
             throw $exception;
         }
+
+        $confirmed = $this->confirmStored($documentId, $userId);
+
+        return ['confirmed' => $confirmed, 'bytes' => $bytes, 'checksum' => $checksum];
     }
 
-    private function confirm(int $remoteId, string $checksum, int $bytes): bool
+    public function confirmStored(int $documentId, int $userId): bool
     {
-        try {
-            $path = str_replace('{id}', (string) $remoteId, $this->config->confirmPath);
-            $response = $this->client->post($this->url($path), [
-                'headers' => $this->headers() + ['Content-Type' => 'application/json'],
-                'json' => ['sha256_checksum' => $checksum, 'file_size' => $bytes, 'downloaded_at' => date(DATE_ATOM)],
-            ]);
-
-            return in_array($response->getStatusCode(), [200, 204], true);
-        } catch (Throwable) {
+        $this->assertConfigured();
+        $documents = new DocumentModel();
+        $document = $documents->find($documentId);
+        if ($document === null || $document['transfer_status'] !== 'completed') {
             return false;
         }
+
+        $logModel = new TransferLogModel();
+        $logId = (int) $logModel->insert([
+            'document_id' => $documentId,
+            'user_id' => $userId,
+            'action' => 'confirm',
+            'status' => 'started',
+            'started_at' => date('Y-m-d H:i:s'),
+        ], true);
+
+        try {
+            $localPath = $this->resolveLocalPath((string) $document['local_path']);
+            if ($localPath === null) {
+                throw new RuntimeException('File lokal tidak ditemukan saat akan dikonfirmasi.');
+            }
+            $bytes = filesize($localPath);
+            $checksum = hash_file('sha256', $localPath);
+            if ($bytes === false || ! is_string($checksum)
+                || $bytes !== (int) $document['file_size']
+                || ! hash_equals((string) $document['sha256_checksum'], $checksum)) {
+                throw new RuntimeException('Integritas file lokal berubah; konfirmasi dibatalkan.');
+            }
+
+            $body = json_encode([
+                'sha256_checksum' => $checksum,
+                'file_size' => $bytes,
+                'downloaded_at' => date(DATE_ATOM),
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+            $remotePath = str_replace('{id}', (string) (int) $document['remote_document_id'], $this->config->confirmPath);
+            $response = $this->request('POST', $remotePath, $body);
+            if (! in_array($response->getStatusCode(), [200, 204], true)) {
+                throw new RuntimeException($this->remoteError($response, 'mengonfirmasi file'));
+            }
+
+            $documents->update($documentId, [
+                'confirmation_status' => 'confirmed',
+                'confirmation_error' => null,
+                'remote_confirmed_at' => date('Y-m-d H:i:s'),
+            ]);
+            $logModel->update($logId, [
+                'status' => 'success',
+                'http_status' => $response->getStatusCode(),
+                'bytes_received' => $bytes,
+                'checksum_valid' => 1,
+                'finished_at' => date('Y-m-d H:i:s'),
+            ]);
+
+            return true;
+        } catch (Throwable $exception) {
+            $documents->update($documentId, [
+                'confirmation_status' => 'failed',
+                'confirmation_error' => mb_substr($exception->getMessage(), 0, 2000),
+            ]);
+            $logModel->update($logId, [
+                'status' => 'failed',
+                'error_message' => mb_substr($exception->getMessage(), 0, 2000),
+                'finished_at' => date('Y-m-d H:i:s'),
+            ]);
+
+            return false;
+        }
+    }
+
+    private function request(string $method, string $path, string $body = '', string $accept = 'application/json'): ResponseInterface
+    {
+        $url = $this->url($path);
+        $urlPath = parse_url($url, PHP_URL_PATH);
+        if (! is_string($urlPath) || $urlPath === '') {
+            throw new RuntimeException('URL API hosting tidak valid.');
+        }
+        $timestamp = (string) time();
+        $nonce = bin2hex(random_bytes(16));
+        $signature = StorageSyncSignature::sign(
+            $this->config->secret,
+            $this->config->clientId,
+            $method,
+            $urlPath,
+            $timestamp,
+            $nonce,
+            $body,
+        );
+        $headers = [
+            'X-Sync-Client' => $this->config->clientId,
+            'X-Sync-Timestamp' => $timestamp,
+            'X-Sync-Nonce' => $nonce,
+            'X-Sync-Signature' => $signature,
+            'Accept' => $accept,
+        ];
+        $options = ['headers' => $headers];
+        if ($body !== '') {
+            $options['headers']['Content-Type'] = 'application/json';
+            $options['body'] = $body;
+        }
+
+        return $this->client->request(strtoupper($method), $url, $options);
     }
 
     private function assertConfigured(): void
@@ -191,15 +335,32 @@ class RemoteDocumentService
         }
     }
 
-    /** @return array<string, string> */
-    private function headers(): array
-    {
-        return ['Authorization' => 'Bearer ' . $this->config->apiKey, 'Accept' => 'application/json'];
-    }
-
     private function url(string $path): string
     {
         return $this->config->baseUrl . '/' . ltrim($path, '/');
+    }
+
+    private function resolveLocalPath(string $relativePath): ?string
+    {
+        $root = realpath(WRITEPATH . 'documents');
+        if ($root === false) {
+            return null;
+        }
+        $path = realpath($root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, ltrim($relativePath, '/')));
+        if ($path === false || ! is_file($path)
+            || ! str_starts_with(mb_strtolower($path), mb_strtolower($root . DIRECTORY_SEPARATOR))) {
+            return null;
+        }
+
+        return $path;
+    }
+
+    private function remoteError(ResponseInterface $response, string $action): string
+    {
+        $payload = json_decode((string) $response->getBody(), true);
+        $detail = is_array($payload) && is_string($payload['message'] ?? null) ? ' ' . $payload['message'] : '';
+
+        return 'Hosting merespons HTTP ' . $response->getStatusCode() . ' saat ' . $action . '.' . $detail;
     }
 
     private function nullableInt(mixed $value): ?int

@@ -31,12 +31,14 @@ Tambahkan ke `.env` setelah endpoint hosting tersedia:
 
 ```ini
 remoteStorage.baseUrl = 'https://recruitment.example.com/'
-remoteStorage.apiKey = 'API_KEY_RAHASIA'
+remoteStorage.clientId = 'manna-local-01'
+remoteStorage.secret = 'SECRET_HMAC_YANG_SAMA_DENGAN_HOSTING'
 remoteStorage.timeout = 30
 remoteStorage.maxFileSize = 5242880
+remoteStorage.syncBatchLimit = 100
 ```
 
-API key harus berbeda dari password pengguna dan hanya diberikan kepada aplikasi lokal.
+Secret HMAC harus berbeda dari password pengguna, disimpan hanya dalam `.env`, dan nilainya harus sama dengan `storageSync.secret` pada hosting.
 
 ## Kontrak API hosting
 
@@ -47,9 +49,14 @@ API key harus berbeda dari password pengguna dan hanya diberikan kepada aplikasi
 Header:
 
 ```http
-Authorization: Bearer API_KEY_RAHASIA
+X-Sync-Client: manna-local-01
+X-Sync-Timestamp: UNIX_TIMESTAMP
+X-Sync-Nonce: NONCE_HEX_UNIK
+X-Sync-Signature: HMAC_SHA256_HEX
 Accept: application/json
 ```
+
+Seluruh header HMAC dibuat otomatis oleh `RemoteDocumentService`; pengguna tidak perlu mengisinya melalui halaman aplikasi.
 
 Respons:
 
