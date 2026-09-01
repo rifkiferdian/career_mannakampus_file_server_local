@@ -12,6 +12,8 @@ use Throwable;
 
 class DocumentController extends BaseController
 {
+    private const DOCUMENTS_PER_PAGE = 10;
+
     public function index(): string
     {
         $status = trim((string) $this->request->getGet('status'));
@@ -28,10 +30,18 @@ class DocumentController extends BaseController
                 ->groupEnd();
         }
 
+        $documents = $model
+            ->orderBy('remote_uploaded_at', 'DESC')
+            ->orderBy('id', 'DESC')
+            ->paginate(self::DOCUMENTS_PER_PAGE);
+        $pager = $model->pager;
+        $currentPage = max(1, $pager->getCurrentPage());
+
         return view('documents/index', [
             'title' => 'Dokumen Pelamar',
-            'documents' => $model->orderBy('remote_uploaded_at', 'DESC')->orderBy('id', 'DESC')->paginate(20),
-            'pager' => $model->pager,
+            'documents' => $documents,
+            'pager' => $pager,
+            'rowNumberStart' => (($currentPage - 1) * self::DOCUMENTS_PER_PAGE) + 1,
             'status' => $status,
             'search' => $search,
             'remoteConfigured' => config(RemoteStorage::class)->isConfigured(),

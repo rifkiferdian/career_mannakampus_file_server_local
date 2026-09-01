@@ -15,7 +15,7 @@ class AccountController extends BaseController
 
         $rules = [
             'current_password' => 'required',
-            'new_password' => 'required|min_length[12]|max_length[72]',
+            'new_password' => 'required|min_length[6]|max_length[72]',
             'password_confirmation' => 'required|matches[new_password]',
         ];
         if (! $this->validate($rules)) {
@@ -30,10 +30,6 @@ class AccountController extends BaseController
         }
 
         $newPassword = (string) $this->request->getPost('new_password');
-        if (! preg_match('/[A-Z]/', $newPassword) || ! preg_match('/[a-z]/', $newPassword)
-            || ! preg_match('/\d/', $newPassword) || ! preg_match('/[^A-Za-z0-9]/', $newPassword)) {
-            return redirect()->back()->with('error', 'Password baru harus berisi huruf besar, huruf kecil, angka, dan simbol.');
-        }
 
         $model->update((int) $auth['id'], [
             'password_hash' => password_hash($newPassword, PASSWORD_DEFAULT),

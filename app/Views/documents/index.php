@@ -18,11 +18,12 @@
 </div>
 <div class="table-card">
 <table>
-    <thead><tr><th>Pelamar</th><th>Dokumen</th><th>Ukuran</th><th>Status</th><th>Waktu</th><th class="right">Aksi</th></tr></thead>
+    <thead><tr><th>No.</th><th>Pelamar</th><th>Dokumen</th><th>Ukuran</th><th>Status</th><th>Waktu</th><th class="right">Aksi</th></tr></thead>
     <tbody>
-    <?php if ($documents === []): ?><tr><td colspan="6" class="empty">Belum ada dokumen. Jalankan sinkronisasi untuk mengambil PDF dari hosting.</td></tr><?php endif ?>
-    <?php foreach ($documents as $document): ?>
+    <?php if ($documents === []): ?><tr><td colspan="7" class="empty">Belum ada dokumen. Jalankan sinkronisasi untuk mengambil PDF dari hosting.</td></tr><?php endif ?>
+    <?php foreach ($documents as $index => $document): ?>
         <tr>
+            <td><?= number_format($rowNumberStart + $index) ?></td>
             <td><strong><?= esc($document['applicant_name']) ?></strong><small><?= esc($document['application_number'] ?: 'Tanpa nomor lamaran') ?></small></td>
             <td><strong class="file-name"><?= esc($document['original_filename']) ?></strong><small><?= esc($document['document_type']) ?></small></td>
             <td><?= $document['file_size'] ? number_format($document['file_size'] / 1024, 1) . ' KB' : '—' ?></td>
@@ -55,5 +56,5 @@
     </tbody>
 </table>
 </div>
-<div class="pagination"><?= $pager->links() ?></div>
+<div class="pagination"><?= $pager->only(['q', 'status'])->links() ?></div>
 <?= $this->endSection() ?>

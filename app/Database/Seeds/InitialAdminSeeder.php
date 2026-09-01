@@ -15,8 +15,8 @@ class InitialAdminSeeder extends Seeder
 
         $username = trim((string) env('initialAdmin.username', 'admin'));
         $password = (string) env('initialAdmin.password', '');
-        if (strlen($password) < 12) {
-            throw new RuntimeException('initialAdmin.password minimal 12 karakter.');
+        if (strlen($password) < 6) {
+            throw new RuntimeException('initialAdmin.password minimal 6 karakter.');
         }
 
         $now = date('Y-m-d H:i:s');

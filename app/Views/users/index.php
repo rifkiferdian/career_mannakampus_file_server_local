@@ -10,7 +10,7 @@
         <label>Username<input name="username" value="<?= esc(old('username')) ?>" minlength="4" maxlength="50" required></label>
         <label>Email<input type="email" name="email" value="<?= esc(old('email')) ?>" maxlength="190" required></label>
         <label>Peran<select name="role"><option value="hrd" <?= old('role') === 'hrd' ? 'selected' : '' ?>>HRD</option><option value="admin" <?= old('role') === 'admin' ? 'selected' : '' ?>>Admin</option></select></label>
-        <label>Password sementara<input type="password" name="password" minlength="12" maxlength="72" required><small>Minimal 12 karakter, huruf besar/kecil, angka, dan simbol.</small></label>
+        <label>Password sementara<input type="password" name="password" minlength="6" maxlength="72" required><small>Minimal 6 karakter.</small></label>
         <button class="button primary" type="submit">Buat pengguna</button>
     </form>
 </div>

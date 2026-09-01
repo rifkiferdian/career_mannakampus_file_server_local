@@ -22,16 +22,13 @@ class UserController extends BaseController
             'full_name' => 'required|min_length[3]|max_length[120]',
             'email' => 'required|valid_email|max_length[190]|is_unique[users.email]',
             'role' => 'required|in_list[admin,hrd]',
-            'password' => 'required|min_length[12]|max_length[72]',
+            'password' => 'required|min_length[6]|max_length[72]',
         ];
         if (! $this->validate($rules)) {
             return redirect()->back()->withInput()->with('errors', $this->validator->getErrors());
         }
 
         $password = (string) $this->request->getPost('password');
-        if (! $this->strongPassword($password)) {
-            return redirect()->back()->withInput()->with('error', 'Password harus berisi huruf besar, huruf kecil, angka, dan simbol.');
-        }
 
         $id = (int) (new UserModel())->insert([
             'username' => mb_strtolower(trim((string) $this->request->getPost('username'))),
@@ -80,13 +77,5 @@ class UserController extends BaseController
         (new AuditService())->record('user_password_reset', 'Mereset password pengguna ' . $user['username'] . '.');
 
         return redirect()->back()->with('temporary_password', ['username' => $user['username'], 'password' => $password]);
-    }
-
-    private function strongPassword(string $password): bool
-    {
-        return preg_match('/[A-Z]/', $password) === 1
-            && preg_match('/[a-z]/', $password) === 1
-            && preg_match('/\d/', $password) === 1
-            && preg_match('/[^A-Za-z0-9]/', $password) === 1;
     }
 }
