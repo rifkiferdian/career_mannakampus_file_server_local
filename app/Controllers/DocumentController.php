@@ -12,7 +12,7 @@ use Throwable;
 
 class DocumentController extends BaseController
 {
-    private const DOCUMENTS_PER_PAGE = 10;
+    private const DOCUMENTS_PER_PAGE = 50;
 
     public function index(): string
     {

@@ -17,7 +17,7 @@
     </form>
 </div>
 <div class="table-card">
-<table>
+<table class="documents-table">
     <thead><tr><th>No.</th><th>Pelamar</th><th>Dokumen</th><th>Ukuran</th><th>Status</th><th>Waktu</th><th class="right">Aksi</th></tr></thead>
     <tbody>
     <?php if ($documents === []): ?><tr><td colspan="7" class="empty">Belum ada dokumen. Jalankan sinkronisasi untuk mengambil PDF dari hosting.</td></tr><?php endif ?>
