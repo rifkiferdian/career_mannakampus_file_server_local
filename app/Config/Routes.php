@@ -17,6 +17,7 @@ $routes->group('dokumen', ['filter' => 'auth'], static function (RouteCollection
     $routes->post('(:num)/hapus-hosting', 'DocumentController::deleteHosting/$1');
     $routes->post('hapus-hosting', 'DocumentController::deleteHostingBulk');
     $routes->get('(:num)/buka', 'DocumentController::open/$1');
+    $routes->get('hosting/(:num)/buka', 'DocumentController::openRemote/$1');
 });
 
 $routes->group('riwayat', ['filter' => 'auth'], static function (RouteCollection $routes): void {

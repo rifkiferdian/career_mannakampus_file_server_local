@@ -204,4 +204,16 @@ class DocumentController extends BaseController
             ->setHeader('Content-Disposition', 'inline; filename="' . $filename . '"')
             ->setHeader('Cache-Control', 'private, no-store, max-age=0');
     }
+
+    public function openRemote(int $remoteDocumentId): DownloadResponse
+    {
+        $document = (new DocumentModel())
+            ->where('remote_document_id', $remoteDocumentId)
+            ->first();
+        if ($document === null) {
+            throw PageNotFoundException::forPageNotFound('Dokumen dari hosting belum tersedia di server lokal.');
+        }
+
+        return $this->open((int) $document['id']);
+    }
 }

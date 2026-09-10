@@ -50,7 +50,10 @@ class AuthController extends BaseController
         (new UserModel())->update((int) $user['id'], ['last_login_at' => date('Y-m-d H:i:s')]);
         (new AuditService())->record('login_success', 'Pengguna berhasil login.');
 
-        return redirect()->to(site_url('/'));
+        $intendedUrl = (string) session()->get('intended_url');
+        session()->remove('intended_url');
+
+        return redirect()->to($intendedUrl !== '' ? $intendedUrl : site_url('/'));
     }
 
     public function logout()
