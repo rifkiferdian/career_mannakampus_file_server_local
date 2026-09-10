@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
     <title><?= esc($title ?? 'File Server Lokal') ?> — Manna Kampus</title>
-    <link rel="stylesheet" href="<?= base_url('assets/app.css') ?>">
+    <link rel="stylesheet" href="<?= base_url('assets/app.css') ?>?v=<?= (int) @filemtime(FCPATH . 'assets/app.css') ?>">
 </head>
 <body>
 <?php $auth = (array) session('auth_user'); $path = trim(uri_string(), '/'); ?>

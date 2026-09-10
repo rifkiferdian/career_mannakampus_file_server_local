@@ -17,10 +17,26 @@ class DocumentController extends BaseController
     public function index(): string
     {
         $status = trim((string) $this->request->getGet('status'));
+        $storage = trim((string) $this->request->getGet('storage'));
         $search = trim((string) $this->request->getGet('q'));
         $model = new DocumentModel();
         if (in_array($status, ['pending', 'downloading', 'completed', 'failed'], true)) {
             $model->where('transfer_status', $status);
+        }
+        if ($storage === 'ready') {
+            $model->where('transfer_status', 'completed')
+                ->where('confirmation_status', 'confirmed')
+                ->where('hosting_deleted_at', null);
+        } elseif ($storage === 'deleted') {
+            $model->where('hosting_deleted_at IS NOT NULL', null, false);
+        } elseif ($storage === 'attention') {
+            $model->groupStart()
+                ->whereIn('transfer_status', ['pending', 'downloading', 'failed'])
+                ->orGroupStart()
+                    ->where('transfer_status', 'completed')
+                    ->whereIn('confirmation_status', ['pending', 'failed'])
+                ->groupEnd()
+            ->groupEnd();
         }
         if ($search !== '') {
             $model->groupStart()
@@ -36,13 +52,35 @@ class DocumentController extends BaseController
             ->paginate(self::DOCUMENTS_PER_PAGE);
         $pager = $model->pager;
         $currentPage = max(1, $pager->getCurrentPage());
+        $summary = [
+            'total' => (new DocumentModel())->countAllResults(),
+            'readyToDelete' => (new DocumentModel())
+                ->where('transfer_status', 'completed')
+                ->where('confirmation_status', 'confirmed')
+                ->where('hosting_deleted_at', null)
+                ->countAllResults(),
+            'deletedFromHosting' => (new DocumentModel())
+                ->where('hosting_deleted_at IS NOT NULL', null, false)
+                ->countAllResults(),
+            'needsAttention' => (new DocumentModel())
+                ->groupStart()
+                    ->whereIn('transfer_status', ['pending', 'downloading', 'failed'])
+                    ->orGroupStart()
+                        ->where('transfer_status', 'completed')
+                        ->whereIn('confirmation_status', ['pending', 'failed'])
+                    ->groupEnd()
+                ->groupEnd()
+                ->countAllResults(),
+        ];
 
         return view('documents/index', [
             'title' => 'Dokumen Pelamar',
             'documents' => $documents,
             'pager' => $pager,
             'rowNumberStart' => (($currentPage - 1) * self::DOCUMENTS_PER_PAGE) + 1,
+            'summary' => $summary,
             'status' => $status,
+            'storage' => in_array($storage, ['ready', 'deleted', 'attention'], true) ? $storage : '',
             'search' => $search,
             'remoteConfigured' => config(RemoteStorage::class)->isConfigured(),
         ]);
@@ -86,6 +124,60 @@ class DocumentController extends BaseController
             (new AuditService())->record('document_download_failed', mb_substr($exception->getMessage(), 0, 500), $id);
             return redirect()->back()->with('error', 'Download gagal: ' . $exception->getMessage());
         }
+    }
+
+    public function deleteHosting(int $id)
+    {
+        $auth = (array) session('auth_user');
+        try {
+            $result = (new RemoteDocumentService())->deleteFromHosting($id, (int) $auth['id']);
+            $message = $result['alreadyDeleted']
+                ? 'File di hosting sebelumnya sudah dihapus. Salinan lokal tetap tersedia.'
+                : 'File PDF berhasil dihapus dari hosting. Salinan lokal tetap tersedia.';
+            (new AuditService())->record('hosting_file_deleted', $message, $id);
+
+            return redirect()->back()->with('success', $message);
+        } catch (Throwable $exception) {
+            (new AuditService())->record('hosting_file_delete_failed', mb_substr($exception->getMessage(), 0, 500), $id);
+
+            return redirect()->back()->with('error', 'File hosting tidak dihapus: ' . $exception->getMessage());
+        }
+    }
+
+    public function deleteHostingBulk()
+    {
+        $ids = array_values(array_unique(array_filter(
+            array_map('intval', (array) $this->request->getPost('document_ids')),
+            static fn (int $id): bool => $id > 0,
+        )));
+        if ($ids === []) {
+            return redirect()->back()->with('warning', 'Pilih minimal satu dokumen yang akan dihapus dari hosting.');
+        }
+        if (count($ids) > 50) {
+            return redirect()->back()->with('error', 'Maksimal 50 dokumen dapat dihapus dalam satu proses.');
+        }
+
+        $auth = (array) session('auth_user');
+        $service = new RemoteDocumentService();
+        $success = 0;
+        $failed = 0;
+        foreach ($ids as $id) {
+            try {
+                $service->deleteFromHosting($id, (int) $auth['id']);
+                (new AuditService())->record('hosting_file_deleted', 'File PDF dihapus dari hosting melalui pilihan massal.', $id);
+                $success++;
+            } catch (Throwable $exception) {
+                (new AuditService())->record('hosting_file_delete_failed', mb_substr($exception->getMessage(), 0, 500), $id);
+                $failed++;
+            }
+        }
+
+        $summary = sprintf('%d file hosting dihapus; %d gagal.', $success, $failed);
+        if ($failed > 0) {
+            return redirect()->back()->with('warning', $summary . ' Periksa status atau riwayat transfer.');
+        }
+
+        return redirect()->back()->with('success', $summary . ' Salinan lokal tetap tersimpan.');
     }
 
     public function open(int $id): DownloadResponse

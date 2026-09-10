@@ -14,6 +14,6 @@ class DocumentModel extends Model
         'document_type', 'original_filename', 'stored_filename', 'local_path', 'mime_type',
         'file_size', 'sha256_checksum', 'transfer_status', 'confirmation_status',
         'confirmation_error', 'remote_confirmed_at', 'last_error', 'remote_uploaded_at',
-        'downloaded_at', 'downloaded_by',
+        'downloaded_at', 'downloaded_by', 'hosting_deleted_at', 'hosting_delete_error',
     ];
 }

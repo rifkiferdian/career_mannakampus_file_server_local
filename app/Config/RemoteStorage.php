@@ -15,6 +15,7 @@ class RemoteStorage extends BaseConfig
     public string $pendingPath = 'api/storage/documents/pending';
     public string $downloadPath = 'api/storage/documents/{id}/download';
     public string $confirmPath = 'api/storage/documents/{id}/confirm';
+    public string $deletePath = 'api/storage/documents/{id}/delete';
 
     public function __construct()
     {

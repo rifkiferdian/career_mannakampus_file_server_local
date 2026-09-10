@@ -294,6 +294,83 @@ class RemoteDocumentService
         }
     }
 
+    /** @return array{deletedAt: string, alreadyDeleted: bool} */
+    public function deleteFromHosting(int $documentId, int $userId): array
+    {
+        $this->assertConfigured();
+        $documents = new DocumentModel();
+        $document = $documents->find($documentId);
+        if ($document === null) {
+            throw new RuntimeException('Dokumen tidak ditemukan.');
+        }
+        if ($document['transfer_status'] !== 'completed' || $document['confirmation_status'] !== 'confirmed') {
+            throw new RuntimeException('File hosting hanya dapat dihapus setelah dokumen lokal selesai dan terkonfirmasi.');
+        }
+        if (! empty($document['hosting_deleted_at'])) {
+            return ['deletedAt' => (string) $document['hosting_deleted_at'], 'alreadyDeleted' => true];
+        }
+
+        $logModel = new TransferLogModel();
+        $logId = (int) $logModel->insert([
+            'document_id' => $documentId,
+            'user_id' => $userId,
+            'action' => 'delete_hosting',
+            'status' => 'started',
+            'started_at' => date('Y-m-d H:i:s'),
+        ], true);
+
+        try {
+            $localPath = $this->resolveLocalPath((string) $document['local_path']);
+            if ($localPath === null) {
+                throw new RuntimeException('File lokal tidak ditemukan. File hosting tidak dihapus.');
+            }
+            $bytes = filesize($localPath);
+            $checksum = hash_file('sha256', $localPath);
+            if ($bytes === false || ! is_string($checksum)
+                || $bytes !== (int) $document['file_size']
+                || ! hash_equals((string) $document['sha256_checksum'], $checksum)) {
+                throw new RuntimeException('Integritas file lokal berubah. File hosting tidak dihapus.');
+            }
+
+            $body = json_encode([
+                'sha256_checksum' => $checksum,
+                'file_size' => $bytes,
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+            $remotePath = str_replace('{id}', (string) (int) $document['remote_document_id'], $this->config->deletePath);
+            $response = $this->request('POST', $remotePath, $body);
+            if ($response->getStatusCode() !== 200) {
+                throw new RuntimeException($this->remoteError($response, 'menghapus file hosting'));
+            }
+
+            $payload = json_decode((string) $response->getBody(), true);
+            $remoteDeletedAt = is_array($payload) ? ($payload['data']['deleted_at'] ?? null) : null;
+            $deletedAt = $this->dateTime($remoteDeletedAt) ?? date('Y-m-d H:i:s');
+            $alreadyDeleted = is_array($payload) && (($payload['data']['already_deleted'] ?? false) === true);
+            $documents->update($documentId, [
+                'hosting_deleted_at' => $deletedAt,
+                'hosting_delete_error' => null,
+            ]);
+            $logModel->update($logId, [
+                'status' => 'success',
+                'http_status' => $response->getStatusCode(),
+                'checksum_valid' => 1,
+                'finished_at' => date('Y-m-d H:i:s'),
+            ]);
+
+            return ['deletedAt' => $deletedAt, 'alreadyDeleted' => $alreadyDeleted];
+        } catch (Throwable $exception) {
+            $documents->update($documentId, [
+                'hosting_delete_error' => mb_substr($exception->getMessage(), 0, 2000),
+            ]);
+            $logModel->update($logId, [
+                'status' => 'failed',
+                'error_message' => mb_substr($exception->getMessage(), 0, 2000),
+                'finished_at' => date('Y-m-d H:i:s'),
+            ]);
+            throw $exception;
+        }
+    }
+
     private function request(string $method, string $path, string $body = '', string $accept = 'application/json'): ResponseInterface
     {
         $url = $this->url($path);

@@ -14,6 +14,8 @@ $routes->group('dokumen', ['filter' => 'auth'], static function (RouteCollection
     $routes->get('/', 'DocumentController::index');
     $routes->post('sinkronkan', 'DocumentController::sync');
     $routes->post('(:num)/download', 'DocumentController::download/$1');
+    $routes->post('(:num)/hapus-hosting', 'DocumentController::deleteHosting/$1');
+    $routes->post('hapus-hosting', 'DocumentController::deleteHostingBulk');
     $routes->get('(:num)/buka', 'DocumentController::open/$1');
 });
 
