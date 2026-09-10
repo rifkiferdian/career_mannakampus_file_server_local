@@ -1,0 +1,29 @@
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+    Options +FollowSymlinks
+    RewriteEngine On
+
+    # Never expose application source, dependencies, runtime data, or secrets.
+    RewriteRule ^(?:app|vendor|writable|tests|build)(?:/|$) - [F,L,NC]
+    RewriteRule ^(?:\.env(?:\..*)?|composer\.(?:json|lock)|phpunit\.dist\.xml|spark|preload\.php)$ - [F,L,NC]
+
+    # Serve public assets through the public directory.
+    RewriteCond %{DOCUMENT_ROOT}/career_mannakampus_file_server_local/public/$1 -f [OR]
+    RewriteCond %{DOCUMENT_ROOT}/career_mannakampus_file_server_local/public/$1 -d
+    RewriteRule ^(.+)$ public/$1 [L]
+
+    # Send all application routes to CodeIgniter's root entry point.
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^ index.php [L,QSA]
+
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>
+
+<IfModule !mod_rewrite.c>
+    ErrorDocument 404 /career_mannakampus_file_server_local/index.php
+</IfModule>
+
+ServerSignature Off
