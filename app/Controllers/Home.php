@@ -19,6 +19,7 @@ class Home extends BaseController
         ];
 
         return view('dashboard', [
+            'diskUsage' => (new \App\Libraries\DiskUsage())->read(is_dir(WRITEPATH . 'documents') ? WRITEPATH . 'documents' : WRITEPATH),
             'title' => 'Dashboard',
             'stats' => $stats,
             'remoteConfigured' => config(RemoteStorage::class)->isConfigured(),

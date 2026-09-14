@@ -1,4 +1,7 @@
 <?= $this->extend('layouts/app') ?>
+<?= $this->section('styles') ?>
+<link rel="stylesheet" href="<?= base_url('assets/dashboard-storage.css') ?>?v=1">
+<?= $this->endSection() ?>
 <?= $this->section('content') ?>
 <?php if (! $remoteConfigured): ?>
     <div class="connection-banner"><div><strong>Koneksi hosting belum dikonfigurasi</strong><span>Isi <code>remoteStorage.baseUrl</code>, <code>remoteStorage.clientId</code>, dan <code>remoteStorage.secret</code> pada file .env.</span></div><span class="status-dot offline">Offline</span></div>
@@ -11,6 +14,7 @@
     <article class="stat green"><span>Tersimpan lokal</span><strong><?= number_format($stats['completed']) ?></strong><small>Checksum terverifikasi</small></article>
     <article class="stat red"><span>Gagal</span><strong><?= number_format($stats['failed']) ?></strong><small>Perlu dicoba kembali</small></article>
 </div>
+<?= view('partials/dashboard_storage', ['diskUsage' => $diskUsage]) ?>
 <div class="panel-heading"><div><p class="eyebrow">Aktivitas terbaru</p><h2>Transfer dokumen</h2></div><a class="button ghost" href="<?= site_url('riwayat/transfer') ?>">Lihat semua</a></div>
 <div class="table-card">
     <table><thead><tr><th>Waktu</th><th>Pelamar / File</th><th>Aksi</th><th>Status</th><th>Ukuran</th></tr></thead><tbody>

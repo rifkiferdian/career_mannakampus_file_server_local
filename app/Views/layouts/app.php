@@ -6,6 +6,7 @@
     <meta name="robots" content="noindex,nofollow">
     <title><?= esc($title ?? 'File Server Lokal') ?> — Manna Kampus</title>
     <link rel="stylesheet" href="<?= base_url('assets/app.css') ?>?v=<?= (int) @filemtime(FCPATH . 'assets/app.css') ?>">
+    <?= $this->renderSection('styles') ?>
 </head>
 <body>
 <?php $auth = (array) session('auth_user'); $path = trim(uri_string(), '/'); ?>
